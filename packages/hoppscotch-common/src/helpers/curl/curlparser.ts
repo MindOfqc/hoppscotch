@@ -66,9 +66,7 @@ export const parseCurlCommand = (curlCommand: string) => {
         ? args.dataUrlencode
         : [args.dataUrlencode]
 
-      const data = A.map(decodeURIComponent)(urlEncodedData)
-
-      return { ...args, d: data }
+      return { ...args, d: urlEncodedData }
     }),
     O.getOrElse(() => args)
   )
@@ -138,12 +136,19 @@ export const parseCurlCommand = (curlCommand: string) => {
   }
 
   const stringToPair = (pair: string): [string, string] => {
-    const decodedPair = safeDecodeURIComponent(pair)
+    // --data-urlencode takes literal content; only its name is already encoded.
+    const decodedPair = args.dataUrlencode ? pair : safeDecodeURIComponent(pair)
     const eqIndex = decodedPair.indexOf("=")
 
     if (eqIndex === -1) return [decodedPair, ""]
 
-    return [decodedPair.slice(0, eqIndex), decodedPair.slice(eqIndex + 1)]
+    const key = decodedPair.slice(0, eqIndex)
+    return [
+      args.dataUrlencode
+        ? safeDecodeURIComponent(key.replace(/\+/g, " "))
+        : key,
+      decodedPair.slice(eqIndex + 1),
+    ]
   }
 
   const shouldParseDataAsQueries = objHasProperty(

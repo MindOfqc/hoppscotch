@@ -1144,6 +1144,75 @@ describe("Parse curl command to Hopp REST Request", () => {
     expect(actual.body.body).toBe("name: alice\nrole: admin")
   })
 
+  test.each(["100% free", "100%25", "a%20b", "a+b", "a b", "a=b=c", "你好%"])(
+    "preserves literal --data-urlencode content %s",
+    (value) => {
+      for (const get of [false, true]) {
+        const actual = parseCurlToHoppRESTReq(
+          `curl 'https://example.com/api' ${get ? "-G " : ""}--data-urlencode 'query=${value}'`
+        )
+
+        expect(actual.method).toBe(get ? "GET" : "POST")
+        if (get) {
+          expect(actual.params).toEqual([
+            { key: "query", value, active: true, description: "" },
+          ])
+          expect(actual.body.contentType).toBeNull()
+        } else {
+          expect(actual.body.contentType).toBe(
+            "application/x-www-form-urlencoded"
+          )
+          expect(actual.body.body).toBe(`query: ${value}`)
+        }
+      }
+    }
+  )
+
+  test("preserves each repeated --data-urlencode argument", () => {
+    const actual = parseCurlToHoppRESTReq(
+      `curl 'https://example.com/api' --data-urlencode 'first=100% free' --data-urlencode 'second=a%20b+c=d'`
+    )
+
+    expect(actual.body.body).toBe("first: 100% free\nsecond: a%20b+c=d")
+  })
+
+  test.each([
+    ["first%20name", "first name"],
+    ["first%3Dname", "first=name"],
+    ["first%2520name", "first%20name"],
+    ["first+name", "first name"],
+  ])(
+    "decodes the already encoded --data-urlencode name %s once",
+    (name, key) => {
+      const actual = parseCurlToHoppRESTReq(
+        `curl 'https://example.com/api' --data-urlencode '${name}=100%25'`
+      )
+
+      expect(actual.body.body).toBe(`${key}: 100%25`)
+    }
+  )
+
+  test.each(["--data", "--data-raw"])(
+    "keeps decoding already encoded form data with %s",
+    (flag) => {
+      const actual = parseCurlToHoppRESTReq(
+        `curl 'https://example.com/api' ${flag} 'query=a%2520b%2Bc'`
+      )
+
+      expect(actual.body.body).toBe("query: a%20b+c")
+    }
+  )
+
+  test("keeps decoding already encoded URL query parameters once", () => {
+    const actual = parseCurlToHoppRESTReq(
+      `curl 'https://example.com/api?query=a%2520b%2Bc'`
+    )
+
+    expect(actual.params).toEqual([
+      { key: "query", value: "a%20b+c", active: true, description: "" },
+    ])
+  })
+
   test("does not intercept -d inside a quoted header value", () => {
     const command = `curl 'https://example.com/api' -H 'X-Custom: -d {"fake":1}' -d '{"real":true}'`
 
